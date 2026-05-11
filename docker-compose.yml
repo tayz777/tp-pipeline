@@ -11,11 +11,11 @@ services:
     networks:
       - backend
     healthcheck:
-      test: ["CMD-SHELL", "mongosh --username $MONGO_INITDB_ROOT_USERNAME --password $MONGO_INITDB_ROOT_PASSWORD --authenticationDatabase admin --eval 'db.runCommand({ping:1})' --quiet"]
+      test: ["CMD-SHELL", "mongosh --username $$MONGO_INITDB_ROOT_USERNAME --password $$MONGO_INITDB_ROOT_PASSWORD --authenticationDatabase admin --eval \"if(db.getSiblingDB('blog_db').posts.countDocuments({})!==5){quit(1)}\" --quiet"]
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 30s
+      start_period: 60s
 
   db_mysql:
     image: mysql:8.0
