@@ -37,6 +37,11 @@ jobs:
       - name: Start stack
         run: docker compose up -d --build
 
+      - name: Debug Mongo logs
+        if: failure()
+        run: |
+          docker compose logs db_mongo
+
       - name: Show containers
         run: docker ps -a
 
