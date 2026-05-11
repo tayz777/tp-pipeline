@@ -1,0 +1,99 @@
+name: "Job 1 – Build & Security Scan"
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-and-scan:
+    name: "Build & Scan"
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      #
+      - name: Build FastAPI image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./api
+          file: ./api/Dockerfile
+          tags: my-api:latest
+          load: true
+
+   
+      - name: Docker Scout – Scan API image
+        uses: docker/scout-action@v1
+        with:
+          command: cves
+          image: my-api:latest
+          only-severities: critical
+          exit-code: true
+
+      
+      - name: Trivy – Scan MySQL image (report only)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "mysql:8"
+          format: "table"
+          severity: "CRITICAL,HIGH"
+          exit-code: "0"
+
+  deploy:
+    name: "Job 2 – Deploy"
+    runs-on: ubuntu-latest
+    needs: build-and-scan
+
+    steps:
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Generate .env file
+        run: |
+          cat <<EOF > .env
+          MONGO_INITDB_ROOT_USERNAME=${{ secrets.MONGO_INITDB_ROOT_USERNAME }}
+          MONGO_INITDB_ROOT_PASSWORD=${{ secrets.MONGO_INITDB_ROOT_PASSWORD }}
+          MONGO_URL=mongodb://${{ secrets.MONGO_INITDB_ROOT_USERNAME }}:${{ secrets.MONGO_INITDB_ROOT_PASSWORD }}@db_mongo:27017/blog_db?authSource=admin
+          MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
+          MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}
+          MYSQL_USER=${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_HOST=db_mysql
+          ME_CONFIG_BASICAUTH_USERNAME=${{ secrets.ME_CONFIG_BASICAUTH_USERNAME }}
+          ME_CONFIG_BASICAUTH_PASSWORD=${{ secrets.ME_CONFIG_BASICAUTH_PASSWORD }}
+          ME_CONFIG_MONGODB_ADMINUSERNAME=${{ secrets.MONGO_INITDB_ROOT_USERNAME }}
+          ME_CONFIG_MONGODB_ADMINPASSWORD=${{ secrets.MONGO_INITDB_ROOT_PASSWORD }}
+          ME_CONFIG_MONGODB_URL=mongodb://${{ secrets.MONGO_INITDB_ROOT_USERNAME }}:${{ secrets.MONGO_INITDB_ROOT_PASSWORD }}@db_mongo:27017/
+          ME_CONFIG_BASICAUTH=false
+          EOF
+
+      - name: Set up Docker Compose
+        run: docker compose up -d --build
+
+      - name: Wait for services to be healthy
+        run: |
+          for i in $(seq 1 30); do
+            STATUS=$(docker compose ps --format json | python3 -c "import sys,json; data=sys.stdin.read(); containers=[json.loads(l) for l in data.strip().splitlines()]; unhealthy=[c['Name'] for c in containers if c.get('Health','') not in ('healthy','')]; print(','.join(unhealthy))" 2>/dev/null || echo "error")
+            if [ -z "$STATUS" ] || [ "$STATUS" = "," ]; then
+              echo "All services healthy"; exit 0
+            fi
+            echo "Waiting... unhealthy: $STATUS"
+            sleep 5
+          done
+          docker compose logs
+          exit 1
