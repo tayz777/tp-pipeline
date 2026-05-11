@@ -31,11 +31,11 @@ services:
     networks:
       - backend
     healthcheck:
-      test: ["CMD-SHELL", "mysql -u$$MYSQL_USER -p$$MYSQL_PASSWORD $$MYSQL_DATABASE -sNe 'SELECT COUNT(*) FROM utilisateurs' | grep -q '^4$'"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-      start_period: 40s
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
 
   admin_mongo:
     image: mongo-express:latest
