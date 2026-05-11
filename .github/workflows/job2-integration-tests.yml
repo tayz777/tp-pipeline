@@ -1,0 +1,78 @@
+name: "Job 2 – Integration Tests"
+
+on:
+  workflow_run:
+    workflows: ["Job 1 – Build & Security Scan"]
+    types: [ completed ]
+    branches: [ main ]
+
+jobs:
+  integration-tests:
+    name: "Integration Tests"
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Generate .env file
+        run: |
+          cat <<EOF > .env
+          MONGO_INITDB_ROOT_USERNAME=root
+          MONGO_INITDB_ROOT_PASSWORD=${{ secrets.MONGO_INITDB_ROOT_PASSWORD }}
+          MONGO_URL=mongodb://root:${{ secrets.MONGO_INITDB_ROOT_PASSWORD }}@db_mongo:27017/blog_db?authSource=admin
+          MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
+          MYSQL_USER=${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}
+          MYSQL_HOST=db_mysql
+          ME_CONFIG_MONGODB_ADMINUSERNAME=root
+          ME_CONFIG_MONGODB_ADMINPASSWORD=${{ secrets.MONGO_INITDB_ROOT_PASSWORD }}
+          ME_CONFIG_MONGODB_URL=mongodb://root:${{ secrets.MONGO_INITDB_ROOT_PASSWORD }}@db_mongo:27017/
+          ME_CONFIG_BASICAUTH=false
+          EOF
+
+      - name: Start stack
+        run: docker compose up -d --build
+
+      - name: Show containers
+        run: docker ps -a
+
+      - name: Wait for all services to be healthy
+        run: |
+          MAX_RETRIES=12
+          INTERVAL=5
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "Health check attempt $i / $MAX_RETRIES..."
+            STATUSES=$(docker compose ps --format json | jq -r '.[].Health')
+            ALL_OK=true
+            while IFS= read -r status; do
+              if [ "$status" != "healthy" ] && [ "$status" != "no-healthcheck" ] && [ -n "$status" ]; then
+                ALL_OK=false
+                break
+              fi
+            done <<< "$STATUSES"
+            if [ "$ALL_OK" = "true" ]; then
+              echo "All services are ready."
+              exit 0
+            fi
+            echo "Not ready yet. Waiting ${INTERVAL}s..."
+            sleep $INTERVAL
+          done
+          echo "Timeout: services did not become healthy in time."
+          docker compose logs
+          exit 1
+
+      - name: Check API – GET /posts returns 200
+        run: |
+          curl -f --retry 3 --retry-delay 3 http://localhost:8000/posts
+
+      - name: Check API – GET /users returns 200
+        run: |
+          curl -f --retry 3 --retry-delay 3 http://localhost:8000/users
+
+      - name: Cleanup stack
+        if: always()
+        run: docker compose down -v
