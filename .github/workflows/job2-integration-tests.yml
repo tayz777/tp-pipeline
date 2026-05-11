@@ -34,6 +34,14 @@ jobs:
           echo "ME_CONFIG_BASICAUTH_PASSWORD=${{ secrets.ME_CONFIG_BASICAUTH_PASSWORD }}" >> .env
           echo "ME_CONFIG_BASICAUTH=false" >> .env
 
+      - name: Debug .env keys (no values)
+        run: |
+          echo "=== .env keys generated ==="
+          cut -d= -f1 .env
+          echo "=== Check MONGO vars non-empty ==="
+          grep -E "^MONGO_INITDB_ROOT_USERNAME=.+" .env && echo "USERNAME: OK" || echo "USERNAME: EMPTY – secret manquant !"
+          grep -E "^MONGO_INITDB_ROOT_PASSWORD=.+" .env && echo "PASSWORD: OK" || echo "PASSWORD: EMPTY – secret manquant !"
+
       - name: Start stack
         run: docker compose up -d --build
 
