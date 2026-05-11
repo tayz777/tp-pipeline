@@ -1,0 +1,35 @@
+name: "Job 3 – Publish to Docker Hub"
+
+on:
+  workflow_run:
+    workflows: ["Job 2 – Integration Tests"]
+    types: [ completed ]
+
+jobs:
+  publish:
+    name: "Push to Docker Hub"
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Build final + push sur Docker Hub avec tag latest
+      - name: Build & Push API image to Docker Hub
+        uses: docker/build-push-action@v6
+        with:
+          context: ./api
+          file: ./api/Dockerfile
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/my-api:latest
