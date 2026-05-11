@@ -86,6 +86,13 @@ jobs:
         run: |
           curl -f --retry 3 --retry-delay 3 http://localhost:8000/users
 
+      - name: Debug API logs on failure
+        if: failure()
+        run: |
+          docker compose ps
+          docker compose port api 8000
+          docker compose logs api
+
       - name: Cleanup stack
         if: always()
         run: docker compose down -v
